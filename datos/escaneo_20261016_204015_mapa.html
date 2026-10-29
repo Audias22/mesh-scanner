@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html>
+<head>
+    
+    <meta http-equiv="content-type" content="text/html; charset=UTF-8" />
+    <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.js"></script>
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Leaflet.awesome-markers/2.0.2/leaflet.awesome-markers.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.css"/>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/css/bootstrap.min.css"/>
+    <link rel="stylesheet" href="https://netdna.bootstrapcdn.com/bootstrap/3.0.0/css/bootstrap-glyphicons.css"/>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.2.0/css/all.min.css"/>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/Leaflet.awesome-markers/2.0.2/leaflet.awesome-markers.css"/>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/python-visualization/folium/folium/templates/leaflet.awesome.rotate.min.css"/>
+    
+            <meta name="viewport" content="width=device-width,
+                initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+            <style>
+                #map_6c372c370e2a942bab21e116238fa57b {
+                    position: relative;
+                    width: 100.0%;
+                    height: 100.0%;
+                    left: 0.0%;
+                    top: 0.0%;
+                }
+                .leaflet-container { font-size: 1rem; }
+            </style>
+
+            <style>html, body {
+                width: 100%;
+                height: 100%;
+                margin: 0;
+                padding: 0;
+            }
+            </style>
+
+            <style>#map {
+                position:absolute;
+                top:0;
+                bottom:0;
+                right:0;
+                left:0;
+                }
+            </style>
+
+            <script>
+                L_NO_TOUCH = false;
+                L_DISABLE_3D = false;
+            </script>
+
+        
+</head>
+<body>
+    
+    
+    <div style="position: fixed; top: 15px; left: 60px; z-index: 9999;
+                background: white; padding: 10px 14px; border: 1px solid #999;
+                font-size: 13px; line-height: 1.5;">
+      <b>Escaneo:</b> escaneo_20261016_204015.csv<br>
+      <b>Paquetes con GPS:</b> 3 (1 unicos)<br>
+      <b>Nodos detectados:</b> 1 (!02eacf30)<br>
+      <b>RSSI:</b> -17.0 a -15.0 dBm
+    </div>
+    
+    
+    <div style="position: fixed; bottom: 30px; left: 15px; z-index: 9999;
+                background: white; padding: 10px; border: 1px solid #999;
+                font-size: 13px; line-height: 1.6;">
+      <b>RSSI (dBm)</b><br>
+      <span style="color:#2ecc71;">&#9679;</span> mayor a -90<br>
+      <span style="color:#f1c40f;">&#9679;</span> -90 a -105<br>
+      <span style="color:#e67e22;">&#9679;</span> -105 a -115<br>
+      <span style="color:#e74c3c;">&#9679;</span> menor a -115<br>
+      <span>&#9711;</span> borde negro: mejor / peor
+    </div>
+    
+    
+            <div class="folium-map" id="map_6c372c370e2a942bab21e116238fa57b" ></div>
+        
+</body>
+<script>
+    
+    
+            var map_6c372c370e2a942bab21e116238fa57b = L.map(
+                "map_6c372c370e2a942bab21e116238fa57b",
+                {
+                    center: [14.932535, -89.802789],
+                    crs: L.CRS.EPSG3857,
+                    ...{
+  "zoom": 18,
+  "zoomControl": true,
+  "preferCanvas": false,
+}
+
+                }
+            );
+
+            
+
+        
+    
+            var tile_layer_cf8b4c68fa8bae86e70daf4fdf9faa3e = L.tileLayer(
+                "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+                {
+  "minZoom": 0,
+  "maxZoom": 20,
+  "maxNativeZoom": 18,
+  "noWrap": false,
+  "attribution": "Esri, Maxar, Earthstar Geographics",
+  "subdomains": "abc",
+  "detectRetina": false,
+  "tms": false,
+  "opacity": 1,
+}
+
+            );
+        
+    
+            tile_layer_cf8b4c68fa8bae86e70daf4fdf9faa3e.addTo(map_6c372c370e2a942bab21e116238fa57b);
+        
+    
+            var tile_layer_55b2c7f1d2b30f186db3a28b7075adaf = L.tileLayer(
+                "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",
+                {
+  "minZoom": 0,
+  "maxZoom": 20,
+  "maxNativeZoom": 18,
+  "noWrap": false,
+  "attribution": "Esri",
+  "subdomains": "abc",
+  "detectRetina": false,
+  "tms": false,
+  "opacity": 1,
+}
+
+            );
+        
+    
+            var tile_layer_6a2b7e0318f013391e3631717e97144b = L.tileLayer(
+                "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
+                {
+  "minZoom": 0,
+  "maxZoom": 20,
+  "maxNativeZoom": 18,
+  "noWrap": false,
+  "attribution": "Esri",
+  "subdomains": "abc",
+  "detectRetina": false,
+  "tms": false,
+  "opacity": 1,
+}
+
+            );
+        
+    
+            tile_layer_6a2b7e0318f013391e3631717e97144b.addTo(map_6c372c370e2a942bab21e116238fa57b);
+        
+    
+            var feature_group_ae8bca99f388af58f2938b8ced0e3db0 = L.featureGroup(
+                {
+}
+            );
+        
+    
+            var circle_marker_635f0515f86463cd7fc26b2e761cc24c = L.circleMarker(
+                [14.932535, -89.802789],
+                {"bubblingMouseEvents": true, "color": "#000000", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "#2ecc71", "fillOpacity": 0.85, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "opacity": 1.0, "radius": 9, "stroke": true, "weight": 3}
+            ).addTo(feature_group_ae8bca99f388af58f2938b8ced0e3db0);
+        
+    
+        var popup_2e55bb3b8aa8a2ace8689c41572d48dd = L.popup({
+  "maxWidth": 250,
+});
+
+        
+            
+                var html_66b2f840367c283a13055b6cb734f8e3 = $(`<div id="html_66b2f840367c283a13055b6cb734f8e3" style="width: 100.0%; height: 100.0%;"><b>MEJOR SENAL</b><br><b>Nodo:</b> !02eacf30<br><b>RSSI:</b> -15.0 dBm<br><b>SNR:</b> 6.0 dB<br><b>Hora UTC:</b> 2026-10-17T02:40:24Z<br><b>Satelites:</b> 18<br><b>Repetido:</b> no</div>`)[0];
+                popup_2e55bb3b8aa8a2ace8689c41572d48dd.setContent(html_66b2f840367c283a13055b6cb734f8e3);
+            
+        
+
+        circle_marker_635f0515f86463cd7fc26b2e761cc24c.bindPopup(popup_2e55bb3b8aa8a2ace8689c41572d48dd)
+        ;
+
+        
+    
+    
+            var circle_marker_8098db2689eec256718ab361f1029b0f = L.circleMarker(
+                [14.932535, -89.802789],
+                {"bubblingMouseEvents": true, "color": "#000000", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "#2ecc71", "fillOpacity": 0.85, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "opacity": 1.0, "radius": 9, "stroke": true, "weight": 3}
+            ).addTo(feature_group_ae8bca99f388af58f2938b8ced0e3db0);
+        
+    
+        var popup_de18ea9423c1b0b187a2b92855bfc6ae = L.popup({
+  "maxWidth": 250,
+});
+
+        
+            
+                var html_f000e9caeb45ba60061dae57d8379dd6 = $(`<div id="html_f000e9caeb45ba60061dae57d8379dd6" style="width: 100.0%; height: 100.0%;"><b>PEOR SENAL</b><br><b>Nodo:</b> !02eacf30<br><b>RSSI:</b> -17.0 dBm<br><b>SNR:</b> 6.2 dB<br><b>Hora UTC:</b> 2026-10-17T02:40:31Z<br><b>Satelites:</b> 18<br><b>Repetido:</b> si</div>`)[0];
+                popup_de18ea9423c1b0b187a2b92855bfc6ae.setContent(html_f000e9caeb45ba60061dae57d8379dd6);
+            
+        
+
+        circle_marker_8098db2689eec256718ab361f1029b0f.bindPopup(popup_de18ea9423c1b0b187a2b92855bfc6ae)
+        ;
+
+        
+    
+    
+            var circle_marker_b1362d24c25b479878f9a5eca4db964b = L.circleMarker(
+                [14.932535, -89.802789],
+                {"bubblingMouseEvents": true, "color": "#2ecc71", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "#2ecc71", "fillOpacity": 0.85, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "opacity": 1.0, "radius": 7, "stroke": true, "weight": 1}
+            ).addTo(feature_group_ae8bca99f388af58f2938b8ced0e3db0);
+        
+    
+        var popup_fb2e25dacb2f39b2ffaf204ab510ce52 = L.popup({
+  "maxWidth": 250,
+});
+
+        
+            
+                var html_8595969d34b29ec6ae94ad6bd48bce6e = $(`<div id="html_8595969d34b29ec6ae94ad6bd48bce6e" style="width: 100.0%; height: 100.0%;"><b>Nodo:</b> !02eacf30<br><b>RSSI:</b> -17.0 dBm<br><b>SNR:</b> 6.5 dB<br><b>Hora UTC:</b> 2026-10-17T02:40:38Z<br><b>Satelites:</b> 17<br><b>Repetido:</b> si</div>`)[0];
+                popup_fb2e25dacb2f39b2ffaf204ab510ce52.setContent(html_8595969d34b29ec6ae94ad6bd48bce6e);
+            
+        
+
+        circle_marker_b1362d24c25b479878f9a5eca4db964b.bindPopup(popup_fb2e25dacb2f39b2ffaf204ab510ce52)
+        ;
+
+        
+    
+    
+            feature_group_ae8bca99f388af58f2938b8ced0e3db0.addTo(map_6c372c370e2a942bab21e116238fa57b);
+        
+    
+            var layer_control_1d87a65410852cf7131c4a35e0a3f46a_layers = {
+                base_layers : {
+                    "Satelite" : tile_layer_cf8b4c68fa8bae86e70daf4fdf9faa3e,
+                    "Calles" : tile_layer_55b2c7f1d2b30f186db3a28b7075adaf,
+                },
+                overlays :  {
+                    "Nombres de lugares" : tile_layer_6a2b7e0318f013391e3631717e97144b,
+                    "Mediciones" : feature_group_ae8bca99f388af58f2938b8ced0e3db0,
+                },
+            };
+            let layer_control_1d87a65410852cf7131c4a35e0a3f46a = L.control.layers(
+                layer_control_1d87a65410852cf7131c4a35e0a3f46a_layers.base_layers,
+                layer_control_1d87a65410852cf7131c4a35e0a3f46a_layers.overlays,
+                {
+  "position": "topright",
+  "collapsed": false,
+  "autoZIndex": true,
+}
+            ).addTo(map_6c372c370e2a942bab21e116238fa57b);
+
+        
+</script>
+</html>

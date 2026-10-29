@@ -1,0 +1,164 @@
+#include <Arduino.h>
+#include <RadioLib.h>
+#include <U8g2lib.h>
+
+// ---- Pines del radio SX1262 (Heltec V3) ----
+#define LORA_NSS   8
+#define LORA_SCK   9
+#define LORA_MOSI 10
+#define LORA_MISO 11
+#define LORA_RST  12
+#define LORA_BUSY 13
+#define LORA_DIO1 14
+
+// ---- Pines de la pantalla OLED (Heltec V3) ----
+#define OLED_SDA  17
+#define OLED_SCL  18
+#define OLED_RST  21
+#define VEXT      36   // En LOW enciende la alimentacion de la OLED
+
+SX1262 radio = new Module(LORA_NSS, LORA_DIO1, LORA_RST, LORA_BUSY);
+U8G2_SSD1306_128X64_NONAME_F_HW_I2C pantalla(U8G2_R0, OLED_RST, OLED_SCL, OLED_SDA);
+
+volatile bool llegoPaquete = false;
+
+// Datos del ultimo paquete
+bool hayDatos = false;
+uint32_t ultimoOrigen = 0;
+float ultimoRssi = 0;
+float ultimoSnr = 0;
+
+// Contadores
+uint32_t totalPaquetes = 0;
+uint32_t paquetesUnicos = 0;
+
+// Memoria de los ultimos IDs para detectar repetidos
+uint32_t idsVistos[32] = {0};
+uint8_t posId = 0;
+
+void IRAM_ATTR alRecibir() {
+  llegoPaquete = true;
+}
+
+uint32_t leer32(uint8_t *p) {
+  return p[0] | (p[1] << 8) | (p[2] << 16) | ((uint32_t)p[3] << 24);
+}
+
+bool idYaVisto(uint32_t id) {
+  for (int i = 0; i < 32; i++) {
+    if (idsVistos[i] == id) return true;
+  }
+  return false;
+}
+
+void guardarId(uint32_t id) {
+  idsVistos[posId] = id;
+  posId = (posId + 1) % 32;
+}
+
+void dibujarPantalla() {
+  char linea[32];
+
+  pantalla.clearBuffer();
+  pantalla.setFont(u8g2_font_6x10_tf);
+  pantalla.drawStr(0, 10, "Escaner Mesh 906.875");
+  pantalla.drawHLine(0, 13, 128);
+
+  if (!hayDatos) {
+    pantalla.drawStr(0, 32, "Escuchando...");
+  } else {
+    snprintf(linea, sizeof(linea), "Nodo: !%08x", ultimoOrigen);
+    pantalla.drawStr(0, 26, linea);
+    snprintf(linea, sizeof(linea), "RSSI: %.1f dBm", ultimoRssi);
+    pantalla.drawStr(0, 38, linea);
+    snprintf(linea, sizeof(linea), "SNR:  %.1f dB", ultimoSnr);
+    pantalla.drawStr(0, 50, linea);
+  }
+
+  snprintf(linea, sizeof(linea), "Tot:%u  Unicos:%u", totalPaquetes, paquetesUnicos);
+  pantalla.drawStr(0, 63, linea);
+
+  pantalla.sendBuffer();
+}
+
+void setup() {
+  Serial.begin(115200);
+  delay(1000);
+
+  // Encender y arrancar la OLED
+  pinMode(VEXT, OUTPUT);
+  digitalWrite(VEXT, LOW);
+  delay(100);
+  pantalla.begin();
+
+  pantalla.clearBuffer();
+  pantalla.setFont(u8g2_font_6x10_tf);
+  pantalla.drawStr(0, 32, "Iniciando radio...");
+  pantalla.sendBuffer();
+
+  // Arrancar el radio
+  SPI.begin(LORA_SCK, LORA_MISO, LORA_MOSI, LORA_NSS);
+
+  // 906.875 MHz, BW 250, SF11, CR 4/5, sync 0x2B, 10 dBm, preambulo 16, TCXO 1.8V
+  int estado = radio.begin(906.875, 250.0, 11, 5, 0x2B, 10, 16, 1.8);
+  if (estado != RADIOLIB_ERR_NONE) {
+    Serial.printf("Error al iniciar radio: %d\n", estado);
+    pantalla.clearBuffer();
+    pantalla.drawStr(0, 32, "Error en el radio");
+    pantalla.sendBuffer();
+    while (true) delay(1000);
+  }
+
+  radio.setDio2AsRfSwitch(true);
+  radio.setRxBoostedGainMode(true);
+  radio.setPacketReceivedAction(alRecibir);
+  radio.startReceive();
+
+  Serial.println("Escaner listo, escuchando 906.875 MHz...");
+  dibujarPantalla();
+}
+
+void loop() {
+  if (!llegoPaquete) return;
+  llegoPaquete = false;
+
+  size_t largo = radio.getPacketLength();
+  uint8_t buf[256];
+  int estado = radio.readData(buf, largo);
+
+  if (estado == RADIOLIB_ERR_NONE && largo >= 16) {
+    uint32_t destino = leer32(&buf[0]);
+    uint32_t origen  = leer32(&buf[4]);
+    uint32_t id      = leer32(&buf[8]);
+    uint8_t  flags   = buf[12];
+    float rssi = radio.getRSSI();
+    float snr  = radio.getSNR();
+
+    totalPaquetes++;
+    bool repetido = idYaVisto(id);
+    if (!repetido) {
+      paquetesUnicos++;
+      guardarId(id);
+    }
+
+    hayDatos = true;
+    ultimoOrigen = origen;
+    ultimoRssi = rssi;
+    ultimoSnr = snr;
+
+    Serial.println("---- Paquete recibido ----");
+    Serial.printf("Largo: %u bytes%s\n", largo, repetido ? "  (repetido)" : "");
+    Serial.printf("RSSI: %.1f dBm | SNR: %.1f dB\n", rssi, snr);
+    Serial.printf("De: !%08x  Para: !%08x\n", origen, destino);
+    Serial.printf("ID: %08x  Saltos restantes: %u  Canal hash: %02x\n",
+                  id, flags & 0x07, buf[13]);
+
+    dibujarPantalla();
+  } else if (estado == RADIOLIB_ERR_CRC_MISMATCH) {
+    Serial.println("Paquete con error de CRC");
+  } else if (estado != RADIOLIB_ERR_NONE) {
+    Serial.printf("Error al leer: %d\n", estado);
+  }
+
+  radio.startReceive();
+}
