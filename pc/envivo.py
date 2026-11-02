@@ -31,7 +31,7 @@ from urllib.parse import urlparse, parse_qs
 PUERTO = "COM6"
 VELOCIDAD = 115200
 INTERVALO = 5            # segundos entre cada actualizacion del mapa
-PUERTO_WEB = 8000
+PUERTOS_WEB = [8765, 8080, 5050, 8000, 0]   # se usa el primero que Windows permita
 ARCHIVO_NODOS = "nodos.csv"
 
 # Modelo de perdida por distancia: RSSI = RSSI_1M - 10 * N * log10(d)
@@ -215,10 +215,20 @@ def main():
     fuente = reproducir_guardado if prueba else leer_escaner
     threading.Thread(target=fuente, daemon=True).start()
 
-    servidor = ThreadingHTTPServer(("127.0.0.1", PUERTO_WEB), Manejador)
+    servidor = None
+    for puerto_web in PUERTOS_WEB:
+        try:
+            servidor = ThreadingHTTPServer(("127.0.0.1", puerto_web), Manejador)
+            break
+        except OSError:
+            continue
+    if servidor is None:
+        print("No se encontro un puerto libre para el mapa.")
+        sys.exit(1)
+    puerto_web = servidor.server_address[1]
     threading.Thread(target=servidor.serve_forever, daemon=True).start()
 
-    url = f"http://localhost:{PUERTO_WEB}/"
+    url = f"http://localhost:{puerto_web}/"
     print(f"Mapa en vivo: {url}  (actualiza cada {INTERVALO} s)")
     print(f"Guardando en {nombre}. Ctrl+C para salir.")
     if "--sin-navegador" not in sys.argv:
