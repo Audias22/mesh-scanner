@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Escaner Mesh en vivo</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  html, body, #mapa { margin: 0; height: 100%; font-family: Arial, sans-serif; }
+  .panel { position: absolute; z-index: 1000; background: white; border: 1px solid #999;
+           padding: 10px 14px; font-size: 13px; line-height: 1.5; }
+  #resumen { top: 15px; left: 60px; max-width: 520px; }
+  #leyenda { bottom: 30px; left: 15px; }
+  #resumen table { border-collapse: collapse; margin-top: 6px; }
+  #resumen th { text-align: left; padding-right: 12px; }
+  #resumen td { padding-right: 12px; }
+  .gris { color: #888; }
+  .vivo { display: inline-block; width: 9px; height: 9px; border-radius: 50%;
+          background: #2ecc71; margin-right: 5px; animation: latido 1.5s infinite; }
+  @keyframes latido { 50% { opacity: 0.2; } }
+  .nuevo { animation: destello 1s ease-out 3; }
+  @keyframes destello { 50% { stroke-width: 10; stroke-opacity: 0.4; } }
+</style>
+</head>
+<body>
+<div id="mapa"></div>
+
+<div id="resumen" class="panel">
+  <span class="vivo"></span><b>Escaner Mesh en vivo</b>
+  <span id="modo" class="gris"></span><br>
+  <b>Paquetes:</b> <span id="total">0</span>
+  &nbsp; <b>Ultima actualizacion:</b> <span id="ultima">-</span><br>
+  <table id="tabla"></table>
+</div>
+
+<div id="leyenda" class="panel">
+  <b>Relleno = RSSI (dBm)</b><br>
+  <span style="color:#2ecc71;">&#9679;</span> mayor a -90<br>
+  <span style="color:#f1c40f;">&#9679;</span> -90 a -105<br>
+  <span style="color:#e67e22;">&#9679;</span> -105 a -115<br>
+  <span style="color:#e74c3c;">&#9679;</span> menor a -115<br>
+  <b>Borde</b> = color del nodo
+</div>
+
+<script>
+const ESRI = "https://server.arcgisonline.com/ArcGIS/rest/services";
+const COLORES = ["#1e90ff", "#ff00ff", "#00e5ff", "#ffffff",
+                 "#8e44ad", "#ff6fb5", "#000000", "#a0522d"];
+
+const mapa = L.map("mapa", { maxZoom: 20 }).setView([14.99, -89.6], 11);
+
+const satelite = L.tileLayer(ESRI + "/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+  { maxZoom: 20, maxNativeZoom: 18, attribution: "Esri, Maxar, Earthstar Geographics" }).addTo(mapa);
+const calles = L.tileLayer(ESRI + "/World_Street_Map/MapServer/tile/{z}/{y}/{x}",
+  { maxZoom: 20, maxNativeZoom: 18, attribution: "Esri" });
+const nombres = L.tileLayer(ESRI + "/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
+  { maxZoom: 20, maxNativeZoom: 18, attribution: "Esri" }).addTo(mapa);
+
+const capaNodos = L.layerGroup().addTo(mapa);
+const capaPaquetes = L.layerGroup().addTo(mapa);
+L.control.layers({ "Satelite": satelite, "Calles": calles },
+                 { "Nombres de lugares": nombres, "Nodos instalados": capaNodos, "Paquetes": capaPaquetes },
+                 { collapsed: false }).addTo(mapa);
+
+const iconoAntena = L.icon({
+  iconUrl: "data:image/svg+xml;utf8," + encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="30" height="40" viewBox="0 0 30 40">' +
+    '<path d="M15 39C15 39 2 23 2 14a13 13 0 0 1 26 0c0 9-13 25-13 25z" fill="#d63031" stroke="#fff" stroke-width="2"/>' +
+    '<path d="M15 9v12M10 10a7 7 0 0 0 0 9M20 10a7 7 0 0 1 0 9" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round"/></svg>'),
+  iconSize: [30, 40], iconAnchor: [15, 39], popupAnchor: [0, -34], tooltipAnchor: [12, -22]
+});
+
+let desde = 0;
+let nodos = {};
+let colores = {};
+let stats = {};
+let primeraVez = true;
+
+function colorRssi(r) {
+  if (r >= -90) return "#2ecc71";
+  if (r >= -105) return "#f1c40f";
+  if (r >= -115) return "#e67e22";
+  return "#e74c3c";
+}
+
+function colorNodo(id) {
+  if (!colores[id]) colores[id] = COLORES[Object.keys(colores).length % COLORES.length];
+  return colores[id];
+}
+
+function dibujarNodos() {
+  const limites = [];
+  Object.keys(nodos).sort().forEach(id => {
+    const n = nodos[id];
+    colorNodo(id);
+    if (n.lat === null || n.mostrar === "no") return;
+    L.marker([n.lat, n.lon], { icon: iconoAntena })
+      .bindTooltip(n.nombre, { permanent: true, direction: "right" })
+      .bindPopup(`<b>${n.nombre}</b><br><b>ID:</b> ${id}<br><b>Lugar:</b> ${n.lugar}`)
+      .addTo(capaNodos);
+    limites.push([n.lat, n.lon]);
+  });
+  if (limites.length) mapa.fitBounds(limites, { padding: [60, 60] });
+}
+
+function agregarPunto(p) {
+  stats[p.origen] = stats[p.origen] || { nombre: p.nombre, paq: 0, ultimo: null, hora: "" };
+  const s = stats[p.origen];
+  s.paq++; s.ultimo = p.rssi; s.hora = p.hora;
+
+  const marca = L.circleMarker([p.lat, p.lon], {
+    radius: 7, weight: 3, color: colorNodo(p.origen),
+    fillColor: colorRssi(p.rssi), fillOpacity: 0.85, className: "nuevo"
+  }).bindPopup(
+    `<b>Nodo:</b> ${p.nombre} (${p.origen})<br>` +
+    `<b>RSSI:</b> ${p.rssi.toFixed(1)} dBm<br>` +
+    `<b>SNR:</b> ${p.snr.toFixed(1)} dB<br>` +
+    `<b>Saltos restantes:</b> ${p.saltos}<br>` +
+    (p.dist ? `<b>Distancia estimada al nodo:</b> ${p.dist} m<br>` : `<b>Ubicacion:</b> posicion del escaner<br>`) +
+    `<b>Recibido:</b> ${p.hora}<br>` +
+    `<b>Repetido:</b> ${p.repetido ? "si" : "no"}`
+  );
+  marca.addTo(capaPaquetes);
+}
+
+function dibujarTabla() {
+  let html = '<tr><th>Nodo</th><th>Paq.</th><th>Ultimo RSSI</th><th>Hora</th></tr>';
+  const ids = Object.keys(nodos).filter(id => nodos[id].mostrar !== "no" && nodos[id].lat !== null).sort();
+  const otros = Object.keys(stats).filter(id => !ids.includes(id)).sort();
+  [...ids, ...otros].forEach(id => {
+    const s = stats[id];
+    const nombre = nodos[id] ? nodos[id].nombre : id;
+    html += `<tr><td><span style="color:${colorNodo(id)};text-shadow:0 0 1px #000;">&#9632;</span> ${nombre}</td>` +
+            (s ? `<td>${s.paq}</td><td>${s.ultimo.toFixed(0)} dBm</td><td>${s.hora}</td>`
+               : `<td>0</td><td class="gris" colspan="2">esperando paquetes</td>`) + `</tr>`;
+  });
+  document.getElementById("tabla").innerHTML = html;
+}
+
+async function actualizar() {
+  try {
+    const r = await fetch(`/datos.json?desde=${desde}`, { cache: "no-store" });
+    const d = await r.json();
+    if (primeraVez) {
+      nodos = d.nodos;
+      dibujarNodos();
+      document.getElementById("modo").textContent = d.estado.modo === "prueba" ? "(modo prueba)" : "";
+      primeraVez = false;
+    }
+    d.puntos.forEach(agregarPunto);
+    desde = d.total;
+    document.getElementById("total").textContent = d.total;
+    document.getElementById("ultima").textContent = d.estado.ultima;
+    dibujarTabla();
+    setTimeout(actualizar, d.intervalo * 1000);
+  } catch (e) {
+    document.getElementById("ultima").textContent = "sin conexion con envivo.py";
+    setTimeout(actualizar, 5000);
+  }
+}
+
+actualizar();
+</script>
+</body>
+</html>
