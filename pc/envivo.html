@@ -29,7 +29,8 @@
 <div id="resumen" class="panel">
   <span class="vivo"></span><b>Escaner Mesh en vivo</b>
   <span id="modo" class="gris"></span><br>
-  <b>Paquetes:</b> <span id="total">0</span>
+  <b>Historial:</b> <span id="hist">0</span>
+  &nbsp; <b>Nuevos:</b> <span id="nuevos">0</span>
   &nbsp; <b>Ultima actualizacion:</b> <span id="ultima">-</span><br>
   <table id="tabla"></table>
 </div>
@@ -76,6 +77,7 @@ let nodos = {};
 let colores = {};
 let stats = {};
 let primeraVez = true;
+let nHist = 0, nNuevos = 0;
 
 function colorRssi(r) {
   if (r >= -90) return "#2ecc71";
@@ -108,10 +110,11 @@ function agregarPunto(p) {
   stats[p.origen] = stats[p.origen] || { nombre: p.nombre, paq: 0, ultimo: null, hora: "" };
   const s = stats[p.origen];
   s.paq++; s.ultimo = p.rssi; s.hora = p.hora;
+  if (p.hist) nHist++; else nNuevos++;
 
   const marca = L.circleMarker([p.lat, p.lon], {
     radius: 7, weight: 3, color: colorNodo(p.origen),
-    fillColor: colorRssi(p.rssi), fillOpacity: 0.85, className: "nuevo"
+    fillColor: colorRssi(p.rssi), fillOpacity: 0.85, className: p.hist ? "" : "nuevo"
   }).bindPopup(
     `<b>Nodo:</b> ${p.nombre} (${p.origen})<br>` +
     `<b>RSSI:</b> ${p.rssi.toFixed(1)} dBm<br>` +
@@ -125,7 +128,7 @@ function agregarPunto(p) {
 }
 
 function dibujarTabla() {
-  let html = '<tr><th>Nodo</th><th>Paq.</th><th>Ultimo RSSI</th><th>Hora</th></tr>';
+  let html = '<tr><th>Nodo</th><th>Paq.</th><th>Ultimo RSSI</th><th>Ultimo paquete</th></tr>';
   const ids = Object.keys(nodos).filter(id => nodos[id].mostrar !== "no" && nodos[id].lat !== null).sort();
   const otros = Object.keys(stats).filter(id => !ids.includes(id)).sort();
   [...ids, ...otros].forEach(id => {
@@ -150,7 +153,8 @@ async function actualizar() {
     }
     d.puntos.forEach(agregarPunto);
     desde = d.total;
-    document.getElementById("total").textContent = d.total;
+    document.getElementById("hist").textContent = nHist;
+    document.getElementById("nuevos").textContent = nNuevos;
     document.getElementById("ultima").textContent = d.estado.ultima;
     dibujarTabla();
     setTimeout(actualizar, d.intervalo * 1000);

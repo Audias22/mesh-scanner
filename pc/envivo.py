@@ -8,6 +8,9 @@ Cada paquete se dibuja dentro de la zona del nodo que lo envio, segun la
 ubicacion registrada en nodos.csv, aunque el nodo se haya movido.
 La distancia al nodo se calcula a partir del RSSI recibido.
 
+Todos los paquetes se guardan en datos/historial.csv. Al iniciar, el mapa
+carga ese historial y despues sigue agregando los paquetes nuevos.
+
 Uso:
     python pc/envivo.py              (escaner conectado en COM6)
     python pc/envivo.py --prueba     (reproduce un escaneo guardado, sin escaner)
@@ -15,6 +18,7 @@ Uso:
 
 import csv
 import glob
+import hashlib
 import json
 import math
 import os
@@ -43,6 +47,9 @@ ESCALA = 0.25            # acerca los paquetes al nodo (1 = distancia completa)
 
 CAMPOS = ["ms", "fecha_utc", "origen", "destino", "id", "saltos", "canal",
           "largo", "rssi", "snr", "repetido", "lat", "lon", "sats"]
+
+ARCHIVO_HISTORIAL = "datos/historial.csv"
+CAMPOS_HIST = ["fecha", "origen", "rssi", "snr", "saltos", "repetido", "lat_esc", "lon_esc"]
 
 CARPETA_PC = os.path.dirname(os.path.abspath(__file__))
 
@@ -78,58 +85,92 @@ def leer_nodos():
 
 # ================== UBICACION DEL PAQUETE ==================
 
-def distancia_por_rssi(rssi):
+def distancia_por_rssi(rssi, azar):
     d = 10 ** ((RSSI_1M - rssi) / (10 * EXPONENTE))
-    d *= ESCALA * random.uniform(0.85, 1.15)
+    d *= ESCALA * azar.uniform(0.85, 1.15)
     return max(DIST_MIN, min(DIST_MAX, d))
 
 
-def punto_cerca(lat0, lon0, metros):
-    ang = random.uniform(0, 2 * math.pi)
+def punto_cerca(lat0, lon0, metros, azar):
+    ang = azar.uniform(0, 2 * math.pi)
     dlat = metros * math.cos(ang) / 111320
     dlon = metros * math.sin(ang) / (111320 * math.cos(math.radians(lat0)))
     return lat0 + dlat, lon0 + dlon
 
 
-def procesar(linea, nodos):
-    """Convierte una linea PKT en un punto para el mapa, o None si no aplica."""
-    partes = linea.split(",")[1:]
-    if len(partes) != len(CAMPOS):
-        return None
-    p = dict(zip(CAMPOS, partes))
-    nodo = nodos.get(p["origen"])
+def hora_visible(fecha):
+    """Hoy: HH:MM:SS. Otro dia: dd/mm HH:MM."""
+    try:
+        f = datetime.strptime(fecha, "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return fecha
+    if f.date() == datetime.now().date():
+        return f.strftime("%H:%M:%S")
+    return f.strftime("%d/%m %H:%M")
+
+
+def colocar(reg, n, nodos, hist):
+    """Ubica en el mapa un registro del historial. n = su numero de fila."""
+    nodo = nodos.get(reg["origen"])
     if nodo and nodo["mostrar"] == "no":
         return None
-
-    rssi = float(p["rssi"])
+    rssi = float(reg["rssi"])
+    # Azar fijo por paquete: el punto queda siempre en el mismo lugar
+    semilla = hashlib.md5(f'{n}|{reg["fecha"]}|{reg["origen"]}'.encode()).hexdigest()
+    azar = random.Random(semilla)
 
     if nodo and nodo["lat"] is not None:
         # Nodo registrado: el paquete se ubica en la zona del nodo
-        dist = distancia_por_rssi(rssi)
-        lat, lon = punto_cerca(nodo["lat"], nodo["lon"], dist)
+        dist = distancia_por_rssi(rssi, azar)
+        lat, lon = punto_cerca(nodo["lat"], nodo["lon"], dist, azar)
         tipo = "registrado"
-    elif p["lat"] and p["lon"]:
+    elif reg["lat_esc"] and reg["lon_esc"]:
         # Nodo sin ubicacion registrada: se usa la posicion del escaner
-        lat, lon = float(p["lat"]), float(p["lon"])
+        lat, lon = float(reg["lat_esc"]), float(reg["lon_esc"])
         dist = None
         tipo = "sin_registro"
     else:
         return None
 
     return {
-        "origen": p["origen"],
-        "nombre": nodo["nombre"] if nodo else p["origen"],
+        "origen": reg["origen"],
+        "nombre": nodo["nombre"] if nodo else reg["origen"],
         "rssi": rssi,
-        "snr": float(p["snr"]),
-        "saltos": p["saltos"],
-        "repetido": p["repetido"] == "1",
-        "fecha_utc": p["fecha_utc"],
-        "hora": datetime.now().strftime("%H:%M:%S"),
+        "snr": float(reg["snr"]),
+        "saltos": reg["saltos"],
+        "repetido": reg["repetido"] == "1",
+        "hora": hora_visible(reg["fecha"]),
         "lat": round(lat, 6),
         "lon": round(lon, 6),
         "dist": round(dist) if dist else None,
         "tipo": tipo,
+        "hist": hist,
     }
+
+
+def linea_a_registro(linea):
+    """Convierte una linea PKT del escaner en un registro del historial."""
+    partes = linea.split(",")[1:]
+    if len(partes) != len(CAMPOS):
+        return None
+    p = dict(zip(CAMPOS, partes))
+    return {
+        "fecha": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "origen": p["origen"],
+        "rssi": p["rssi"],
+        "snr": p["snr"],
+        "saltos": p["saltos"],
+        "repetido": p["repetido"],
+        "lat_esc": p["lat"],
+        "lon_esc": p["lon"],
+    }
+
+
+def cargar_historial():
+    if not os.path.exists(ARCHIVO_HISTORIAL):
+        return []
+    with open(ARCHIVO_HISTORIAL, encoding="utf-8") as archivo:
+        return list(csv.DictReader(archivo))
 
 
 # ================== ENTRADA DE PAQUETES ==================
@@ -205,13 +246,26 @@ def main():
     NODOS = leer_nodos()
     prueba = "--prueba" in sys.argv
     estado["modo"] = "prueba" if prueba else "escaner"
-
     os.makedirs("datos", exist_ok=True)
-    nombre = datetime.now().strftime("datos/envivo_%Y%m%d_%H%M%S.csv")
-    archivo = open(nombre, "w", newline="", encoding="utf-8")
-    escritor = csv.writer(archivo)
-    escritor.writerow(["hora", "origen", "nombre", "rssi", "snr", "saltos",
-                       "repetido", "lat", "lon", "dist_m", "tipo"])
+
+    # Historial: se muestra completo al abrir el mapa
+    historial = cargar_historial()
+    for n, reg in enumerate(historial):
+        p = colocar(reg, n, NODOS, hist=True)
+        if p:
+            puntos.append(p)
+    n_hist = len(historial)
+    estado["historial"] = len(puntos)
+
+    # En modo prueba no se toca el historial
+    if prueba:
+        archivo = None
+    else:
+        nuevo = not os.path.exists(ARCHIVO_HISTORIAL)
+        archivo = open(ARCHIVO_HISTORIAL, "a", newline="", encoding="utf-8")
+        escritor = csv.DictWriter(archivo, fieldnames=CAMPOS_HIST)
+        if nuevo:
+            escritor.writeheader()
 
     fuente = reproducir_guardado if prueba else leer_escaner
     threading.Thread(target=fuente, daemon=True).start()
@@ -231,34 +285,43 @@ def main():
 
     url = f"http://localhost:{puerto_web}/"
     print(f"Mapa en vivo: {url}  (actualiza cada {INTERVALO} s)")
-    print(f"Guardando en {nombre}. Ctrl+C para salir.")
+    print(f"Historial cargado: {len(puntos)} paquetes.")
+    if not prueba:
+        print(f"Los paquetes nuevos se agregan a {ARCHIVO_HISTORIAL}. Ctrl+C para salir.")
     if "--sin-navegador" not in sys.argv:
         webbrowser.open(url)
 
+    nuevos_total = 0
     try:
         while True:
             time.sleep(INTERVALO)
             nuevos = []
             while not entrada.empty():
-                p = procesar(entrada.get(), NODOS)
+                reg = linea_a_registro(entrada.get())
+                if not reg:
+                    continue
+                p = colocar(reg, n_hist, NODOS, hist=False)
+                n_hist += 1
+                if archivo:
+                    escritor.writerow(reg)
                 if p:
                     nuevos.append(p)
+            if archivo:
+                archivo.flush()
             if not nuevos:
                 continue
+            nuevos_total += len(nuevos)
             with bloqueo:
                 puntos.extend(nuevos)
                 estado["ultima"] = datetime.now().strftime("%H:%M:%S")
             for p in nuevos:
-                escritor.writerow([p["hora"], p["origen"], p["nombre"], p["rssi"],
-                                   p["snr"], p["saltos"], int(p["repetido"]),
-                                   p["lat"], p["lon"], p["dist"], p["tipo"]])
                 print(f'{p["hora"]}  {p["nombre"]:<14} RSSI {p["rssi"]:>6.1f} dBm  '
                       f'{"~" + str(p["dist"]) + " m del nodo" if p["dist"] else "posicion del escaner"}')
-            archivo.flush()
     except KeyboardInterrupt:
-        print(f"\nFin. Paquetes: {len(puntos)}. Archivo: {nombre}")
+        print(f"\nFin. Paquetes nuevos en esta sesion: {nuevos_total}. Total en el mapa: {len(puntos)}")
     finally:
-        archivo.close()
+        if archivo:
+            archivo.close()
         servidor.shutdown()
 
 
