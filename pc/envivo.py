@@ -37,8 +37,9 @@ ARCHIVO_NODOS = "nodos.csv"
 # Modelo de perdida por distancia: RSSI = RSSI_1M - 10 * N * log10(d)
 RSSI_1M = -30
 EXPONENTE = 2.7
-DIST_MIN = 25            # metros
-DIST_MAX = 2000          # metros
+DIST_MIN = 10            # metros
+DIST_MAX = 400           # metros
+ESCALA = 0.25            # acerca los paquetes al nodo (1 = distancia completa)
 
 CAMPOS = ["ms", "fecha_utc", "origen", "destino", "id", "saltos", "canal",
           "largo", "rssi", "snr", "repetido", "lat", "lon", "sats"]
@@ -79,7 +80,7 @@ def leer_nodos():
 
 def distancia_por_rssi(rssi):
     d = 10 ** ((RSSI_1M - rssi) / (10 * EXPONENTE))
-    d *= random.uniform(0.85, 1.15)
+    d *= ESCALA * random.uniform(0.85, 1.15)
     return max(DIST_MIN, min(DIST_MAX, d))
 
 
