@@ -13,6 +13,7 @@ carga ese historial y despues sigue agregando los paquetes nuevos.
 
 Uso:
     python pc/envivo.py              (escaner conectado en COM6)
+    python pc/envivo.py --wifi       (escaner por WiFi, mismo hotspot que la laptop)
     python pc/envivo.py --prueba     (reproduce un escaneo guardado, sin escaner)
 """
 
@@ -24,6 +25,7 @@ import math
 import os
 import queue
 import random
+import socket
 import sys
 import threading
 import time
@@ -34,6 +36,8 @@ from urllib.parse import urlparse, parse_qs
 
 PUERTO = "COM6"
 VELOCIDAD = 115200
+PUERTO_DATOS = 4210       # WiFi: aqui llegan los paquetes del escaner
+PUERTO_AVISO = 4211       # WiFi: aqui se le avisa al escaner que la laptop escucha
 INTERVALO = 5            # segundos entre cada actualizacion del mapa
 PUERTOS_WEB = [8765, 8080, 5050, 8000, 0]   # se usa el primero que Windows permita
 ARCHIVO_NODOS = "nodos.csv"
@@ -189,6 +193,40 @@ def leer_escaner():
             entrada.put(linea)
 
 
+def leer_wifi():
+    recibe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    recibe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    try:
+        recibe.bind(("0.0.0.0", PUERTO_DATOS))
+    except OSError as e:
+        print(f"No se pudo abrir el puerto {PUERTO_DATOS}: {e}")
+        os._exit(1)
+
+    # Cada 3 s se avisa a la red que la laptop esta escuchando,
+    # asi el escaner manda los paquetes directo a esta laptop
+    def avisar():
+        aviso = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        aviso.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        while True:
+            try:
+                aviso.sendto(b"ESCANER?", ("255.255.255.255", PUERTO_AVISO))
+            except OSError:
+                pass
+            time.sleep(3)
+    threading.Thread(target=avisar, daemon=True).start()
+
+    print(f"Esperando paquetes por WiFi (puerto {PUERTO_DATOS})...")
+    while True:
+        datos, origen = recibe.recvfrom(1024)
+        for linea in datos.decode("utf-8", errors="ignore").splitlines():
+            linea = linea.strip()
+            if linea.startswith("PKT,"):
+                if estado.get("escaner_ip") != origen[0]:
+                    estado["escaner_ip"] = origen[0]
+                    print(f"Escaner conectado por WiFi desde {origen[0]}")
+                entrada.put(linea)
+
+
 def reproducir_guardado():
     archivos = sorted(glob.glob("datos/escaneo_*.csv"))
     if not archivos:
@@ -245,7 +283,8 @@ def main():
     global NODOS
     NODOS = leer_nodos()
     prueba = "--prueba" in sys.argv
-    estado["modo"] = "prueba" if prueba else "escaner"
+    wifi = "--wifi" in sys.argv
+    estado["modo"] = "prueba" if prueba else ("wifi" if wifi else "escaner")
     os.makedirs("datos", exist_ok=True)
 
     # Historial: se muestra completo al abrir el mapa
@@ -267,7 +306,7 @@ def main():
         if nuevo:
             escritor.writeheader()
 
-    fuente = reproducir_guardado if prueba else leer_escaner
+    fuente = reproducir_guardado if prueba else (leer_wifi if wifi else leer_escaner)
     threading.Thread(target=fuente, daemon=True).start()
 
     servidor = None

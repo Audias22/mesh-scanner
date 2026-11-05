@@ -148,7 +148,7 @@ async function actualizar() {
     if (primeraVez) {
       nodos = d.nodos;
       dibujarNodos();
-      document.getElementById("modo").textContent = d.estado.modo === "prueba" ? "(modo prueba)" : "";
+      document.getElementById("modo").textContent = d.estado.modo === "prueba" ? "(modo prueba)" : (d.estado.modo === "wifi" ? "(por WiFi)" : "");
       primeraVez = false;
     }
     d.puntos.forEach(agregarPunto);

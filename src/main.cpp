@@ -3,6 +3,9 @@
 #include <U8g2lib.h>
 #include <TinyGPSPlus.h>
 #include <LittleFS.h>
+#include <WiFi.h>
+#include <WiFiUdp.h>
+#include "wifi_config.h"   // Nombre y contrasena del hotspot
 
 // =====================================================
 //  CONFIGURACION DE LA RED (debe coincidir con los nodos)
@@ -75,6 +78,15 @@ uint32_t ultimoRefresco = 0;
 
 // Comando recibido por USB
 String comando = "";
+
+// ---- WiFi (envio inalambrico a la laptop) ----
+#define PUERTO_DATOS    4210   // La laptop escucha aqui
+#define PUERTO_AVISO    4211   // La laptop avisa aqui que esta escuchando
+WiFiUDP udp;
+bool wifiActivo = false;
+IPAddress ipLaptop;
+bool hayLaptop = false;
+uint32_t ultimoAviso = 0;
 
 void IRAM_ATTR alRecibir() {
   llegoPaquete = true;
@@ -210,6 +222,47 @@ void atenderComandos() {
   }
 }
 
+// ================== WIFI ==================
+
+void iniciarWifi() {
+  if (strlen(WIFI_NOMBRE) == 0) return;   // Sin credenciales: WiFi apagado
+  WiFi.mode(WIFI_STA);
+  WiFi.setAutoReconnect(true);
+  WiFi.begin(WIFI_NOMBRE, WIFI_CLAVE);
+  udp.begin(PUERTO_AVISO);
+  wifiActivo = true;
+}
+
+bool wifiConectado() {
+  return wifiActivo && WiFi.status() == WL_CONNECTED;
+}
+
+// La laptop manda "ESCANER?" cada pocos segundos; asi el escaner sabe su IP
+void atenderWifi() {
+  if (!wifiConectado()) return;
+  int n = udp.parsePacket();
+  if (n > 0) {
+    char msg[16] = {0};
+    udp.read(msg, sizeof(msg) - 1);
+    if (strncmp(msg, "ESCANER?", 8) == 0) {
+      ipLaptop = udp.remoteIP();
+      hayLaptop = true;
+      ultimoAviso = millis();
+    }
+  }
+  // Si la laptop deja de avisar por 30 s, se vuelve a enviar a toda la red
+  if (hayLaptop && millis() - ultimoAviso > 30000) hayLaptop = false;
+}
+
+void enviarWifi(const char *registro) {
+  if (!wifiConectado()) return;
+  IPAddress destino = hayLaptop ? ipLaptop : WiFi.broadcastIP();
+  udp.beginPacket(destino, PUERTO_DATOS);
+  udp.print("PKT,");
+  udp.print(registro);
+  udp.endPacket();
+}
+
 // ================== PANTALLA ==================
 
 void dibujarPantalla() {
@@ -225,6 +278,9 @@ void dibujarPantalla() {
     snprintf(linea, sizeof(linea), "GPS buscando");
   } else {
     snprintf(linea, sizeof(linea), "Sin GPS");
+  }
+  if (wifiConectado()) {
+    strncat(linea, hayLaptop ? " W+" : " W", sizeof(linea) - strlen(linea) - 1);
   }
   pantalla.drawStr(0, 10, linea);
 
@@ -341,6 +397,7 @@ void procesarPaquete() {
     Serial.print("PKT,");
     Serial.print(registro);
     guardarLinea(registro);
+    enviarWifi(registro);
 
     dibujarPantalla();
   } else if (estado == RADIOLIB_ERR_CRC_MISMATCH) {
@@ -371,6 +428,9 @@ void setup() {
 
   // Memoria interna
   iniciarMemoria();
+
+  // WiFi (si hay credenciales en wifi_config.h)
+  iniciarWifi();
 
   // Arrancar el GPS
   gpsSerial.setRxBufferSize(1024);
@@ -410,6 +470,9 @@ void loop() {
 
   // Ordenes desde la PC
   atenderComandos();
+
+  // Aviso de la laptop por WiFi
+  atenderWifi();
 
   // Procesar paquete si llego uno
   if (llegoPaquete) {
