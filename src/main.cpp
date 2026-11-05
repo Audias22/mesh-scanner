@@ -250,12 +250,16 @@ void atenderWifi() {
       ultimoAviso = millis();
     }
   }
-  // Si la laptop deja de avisar por 30 s, se vuelve a enviar a toda la red
-  if (hayLaptop && millis() - ultimoAviso > 30000) hayLaptop = false;
+}
+
+// W+ en pantalla: la laptop aviso en los ultimos 30 s
+bool laptopReciente() {
+  return hayLaptop && millis() - ultimoAviso < 30000;
 }
 
 void enviarWifi(const char *registro) {
   if (!wifiConectado()) return;
+  // Una vez conocida la IP de la laptop, se le envia siempre a ella
   IPAddress destino = hayLaptop ? ipLaptop : WiFi.broadcastIP();
   udp.beginPacket(destino, PUERTO_DATOS);
   udp.print("PKT,");
@@ -280,7 +284,7 @@ void dibujarPantalla() {
     snprintf(linea, sizeof(linea), "Sin GPS");
   }
   if (wifiConectado()) {
-    strncat(linea, hayLaptop ? " W+" : " W", sizeof(linea) - strlen(linea) - 1);
+    strncat(linea, laptopReciente() ? " W+" : " W", sizeof(linea) - strlen(linea) - 1);
   }
   pantalla.drawStr(0, 10, linea);
 

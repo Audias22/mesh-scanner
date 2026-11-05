@@ -202,7 +202,7 @@ def leer_wifi():
         print(f"No se pudo abrir el puerto {PUERTO_DATOS}: {e}")
         os._exit(1)
 
-    # Cada 3 s se avisa a la red que la laptop esta escuchando,
+    # Cada 2 s se avisa a la red que la laptop esta escuchando,
     # asi el escaner manda los paquetes directo a esta laptop
     def avisar():
         aviso = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -212,7 +212,7 @@ def leer_wifi():
                 aviso.sendto(b"ESCANER?", ("255.255.255.255", PUERTO_AVISO))
             except OSError:
                 pass
-            time.sleep(3)
+            time.sleep(2)
     threading.Thread(target=avisar, daemon=True).start()
 
     print(f"Esperando paquetes por WiFi (puerto {PUERTO_DATOS})...")
